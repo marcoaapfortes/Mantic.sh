@@ -691,12 +691,15 @@ export class FileParser {
             });
         }
 
-        // Extract keywords
-        for (const pattern of KEYWORD_PATTERNS) {
-            const matches = content.matchAll(new RegExp(`\\b(\\w*${pattern.source.replace(/[\/\\^$]/g, '')}\\w*)\\b`, 'gi'));
-            for (const match of matches) {
-                if (match[1] && match[1].length >= 3) {
-                    keywordSet.add(match[1].toLowerCase());
+        // Extract keywords using safe word boundary matching
+        const words = content.toLowerCase().split(/[^a-z0-9]+/);
+        for (const word of words) {
+            if (word.length >= 3) {
+                for (const pattern of KEYWORD_PATTERNS) {
+                    if (pattern.test(word)) {
+                        keywordSet.add(word);
+                        break;
+                    }
                 }
             }
         }
