@@ -10,6 +10,9 @@ import {
 // Global variable to hold the loaded TypeScript module
 let tsModule: typeof ts;
 
+// Global variable for PHP parser (lazy loaded)
+let phpParser: any;
+
 function loadTypeScript() {
     if (tsModule) return;
     try {
@@ -23,6 +26,26 @@ function loadTypeScript() {
         } catch (e2) {
             throw new Error('TypeScript not found. Please install typescript in your project: npm install -D typescript');
         }
+    }
+}
+
+function loadPHPParser() {
+    if (phpParser) return;
+    try {
+        const Engine = require('php-parser');
+        phpParser = new Engine({
+            parser: {
+                extractDoc: true,
+                php7: true,
+                suppressErrors: true,
+            },
+            ast: {
+                withPositions: true,
+                withSource: false,
+            },
+        });
+    } catch (e) {
+        throw new Error('php-parser not found. Please install: npm install php-parser');
     }
 }
 
@@ -46,7 +69,7 @@ export interface ParsedFileData {
     functions: FunctionInfo[];
     classes: string[];
     types: string[];
-    language: 'typescript' | 'javascript' | 'tsx' | 'jsx';
+    language: 'typescript' | 'javascript' | 'tsx' | 'jsx' | 'php';
 }
 
 export class FileParser {
@@ -54,6 +77,11 @@ export class FileParser {
      * Parse a source file and extract semantic information
      */
     parse(filePath: string, content: string): ParsedFileData {
+        // Handle PHP files separately
+        if (filePath.endsWith('.php')) {
+            return this.parsePHP(filePath, content);
+        }
+
         loadTypeScript();
 
         const isTsx = filePath.endsWith('.tsx') || filePath.endsWith('.jsx');
@@ -367,6 +395,265 @@ export class FileParser {
             }
         }
     }
+
+    /**
+     * Parse PHP files using php-parser AST
+     * Full AST-based extraction for accurate semantic analysis
+     */
+    private parsePHP(filePath: string, content: string): ParsedFileData {
+        loadPHPParser();
+
+        const result: ParsedFileData = {
+            exports: [],
+            imports: [],
+            components: [],
+            keywords: [],
+            functions: [],
+            classes: [],
+            types: [],
+            language: 'php',
+        };
+
+        const keywordSet = new Set<string>();
+
+        try {
+            const ast = phpParser.parseCode(content, filePath);
+
+            // Helper to extract name from identifier node or string
+            const getName = (nameNode: any): string | null => {
+                if (!nameNode) return null;
+                if (typeof nameNode === 'string') return nameNode;
+                if (typeof nameNode === 'object' && nameNode.name) return nameNode.name;
+                return null;
+            };
+
+            // Recursive AST walker
+            const walk = (node: any) => {
+                if (!node || typeof node !== 'object') return;
+
+                switch (node.kind) {
+                    case 'namespace':
+                        if (node.name) {
+                            keywordSet.add(node.name.toLowerCase());
+                        }
+                        break;
+
+                    case 'class':
+                        const className = getName(node.name);
+                        if (className) {
+                            result.classes.push(className);
+                            result.exports.push({
+                                name: className,
+                                type: 'class',
+                                line: node.loc?.start?.line,
+                            });
+                            keywordSet.add(className.toLowerCase());
+                        }
+                        break;
+
+                    case 'interface':
+                        const interfaceName = getName(node.name);
+                        if (interfaceName) {
+                            result.types.push(interfaceName);
+                            result.exports.push({
+                                name: interfaceName,
+                                type: 'interface',
+                                line: node.loc?.start?.line,
+                            });
+                            keywordSet.add(interfaceName.toLowerCase());
+                        }
+                        break;
+
+                    case 'trait':
+                        const traitName = getName(node.name);
+                        if (traitName) {
+                            result.types.push(traitName);
+                            keywordSet.add(traitName.toLowerCase());
+                        }
+                        break;
+
+                    case 'function':
+                        const funcName = getName(node.name);
+                        if (funcName) {
+                            result.functions.push({
+                                name: funcName,
+                                line: node.loc?.start?.line,
+                                isExported: true,
+                            });
+                            result.exports.push({
+                                name: funcName,
+                                type: 'function',
+                                line: node.loc?.start?.line,
+                            });
+                            keywordSet.add(funcName.toLowerCase());
+                        }
+                        break;
+
+                    case 'method':
+                        const methodName = getName(node.name);
+                        if (methodName) {
+                            // Skip magic methods for keyword extraction
+                            if (!methodName.startsWith('__')) {
+                                result.functions.push({
+                                    name: methodName,
+                                    line: node.loc?.start?.line,
+                                    isExported: node.visibility === 'public',
+                                });
+                                keywordSet.add(methodName.toLowerCase());
+                            }
+                        }
+                        break;
+
+                    case 'usegroup':
+                        // Handle grouped use statements: use Foo\{Bar, Baz}
+                        if (node.items && Array.isArray(node.items)) {
+                            for (const item of node.items) {
+                                const itemName = getName(item.name) || item.name;
+                                if (itemName && typeof itemName === 'string') {
+                                    const aliasName = getName(item.alias);
+                                    const alias = aliasName || itemName.split('\\').pop() || itemName;
+                                    result.imports.push({
+                                        source: itemName,
+                                        names: [alias],
+                                        isDefault: false,
+                                    });
+                                }
+                            }
+                        }
+                        break;
+
+                    case 'useitem':
+                        // Handle single use statement (skip if parent is usegroup)
+                        // usegroup already handles its items
+                        break;
+
+                    case 'string':
+                        // Extract keywords from string literals
+                        if (node.value && typeof node.value === 'string') {
+                            for (const pattern of KEYWORD_PATTERNS) {
+                                if (pattern.test(node.value)) {
+                                    const words = node.value.toLowerCase().split(/[^a-z]+/);
+                                    words.forEach((word: string) => {
+                                        if (word && word.length >= 3 && pattern.test(word)) {
+                                            keywordSet.add(word);
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        break;
+
+                    case 'identifier':
+                        // Extract keywords from identifiers
+                        if (node.name && typeof node.name === 'string') {
+                            for (const pattern of KEYWORD_PATTERNS) {
+                                if (pattern.test(node.name)) {
+                                    keywordSet.add(node.name.toLowerCase());
+                                }
+                            }
+                        }
+                        break;
+                }
+
+                // Recursively walk child nodes
+                for (const key of Object.keys(node)) {
+                    const child = node[key];
+                    if (Array.isArray(child)) {
+                        child.forEach(walk);
+                    } else if (child && typeof child === 'object') {
+                        walk(child);
+                    }
+                }
+            };
+
+            walk(ast);
+        } catch (error) {
+            // If AST parsing fails, fall back to regex-based extraction
+            return this.parsePHPFallback(filePath, content);
+        }
+
+        result.keywords = Array.from(keywordSet).sort();
+        return result;
+    }
+
+    /**
+     * Fallback regex-based PHP parsing when AST fails
+     */
+    private parsePHPFallback(filePath: string, content: string): ParsedFileData {
+        const result: ParsedFileData = {
+            exports: [],
+            imports: [],
+            components: [],
+            keywords: [],
+            functions: [],
+            classes: [],
+            types: [],
+            language: 'php',
+        };
+
+        const keywordSet = new Set<string>();
+
+        // Extract classes
+        const classPattern = /^\s*(?:abstract\s+|final\s+)?class\s+(\w+)/gm;
+        let classMatch;
+        while ((classMatch = classPattern.exec(content)) !== null) {
+            result.classes.push(classMatch[1]);
+            result.exports.push({
+                name: classMatch[1],
+                type: 'class',
+                line: content.substring(0, classMatch.index).split('\n').length,
+            });
+        }
+
+        // Extract interfaces
+        const interfacePattern = /^\s*interface\s+(\w+)/gm;
+        let interfaceMatch;
+        while ((interfaceMatch = interfacePattern.exec(content)) !== null) {
+            result.types.push(interfaceMatch[1]);
+        }
+
+        // Extract functions
+        const functionPattern = /^\s*(?:public\s+|private\s+|protected\s+|static\s+)*function\s+(\w+)\s*\(/gm;
+        let funcMatch;
+        while ((funcMatch = functionPattern.exec(content)) !== null) {
+            const funcName = funcMatch[1];
+            if (!funcName.startsWith('__')) {
+                result.functions.push({
+                    name: funcName,
+                    line: content.substring(0, funcMatch.index).split('\n').length,
+                    isExported: true,
+                });
+            }
+        }
+
+        // Extract use statements
+        const usePattern = /^\s*use\s+([^;]+);/gm;
+        let useMatch;
+        while ((useMatch = usePattern.exec(content)) !== null) {
+            const usePath = useMatch[1].trim();
+            const parts = usePath.split(/\s+as\s+/i);
+            const source = parts[0].trim();
+            const alias = parts[1] ? parts[1].trim() : source.split('\\').pop() || source;
+            result.imports.push({
+                source: source,
+                names: [alias],
+                isDefault: false,
+            });
+        }
+
+        // Extract keywords
+        for (const pattern of KEYWORD_PATTERNS) {
+            const matches = content.matchAll(new RegExp(`\\b(\\w*${pattern.source.replace(/[\/\\^$]/g, '')}\\w*)\\b`, 'gi'));
+            for (const match of matches) {
+                if (match[1] && match[1].length >= 3) {
+                    keywordSet.add(match[1].toLowerCase());
+                }
+            }
+        }
+
+        result.keywords = Array.from(keywordSet).sort();
+        return result;
+    }
 }
 
 /**
@@ -378,7 +665,8 @@ export function shouldParseFile(filePath: string): boolean {
         (ext.endsWith('.ts') ||
             ext.endsWith('.tsx') ||
             ext.endsWith('.js') ||
-            ext.endsWith('.jsx')) &&
+            ext.endsWith('.jsx') ||
+            ext.endsWith('.php')) &&
         !ext.includes('.test.') &&
         !ext.includes('.spec.') &&
         !ext.endsWith('.d.ts')

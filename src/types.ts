@@ -101,7 +101,7 @@ export interface FileEntry {
     types?: string[]; // Type/Interface names
 
     // Metadata
-    language?: 'typescript' | 'javascript' | 'tsx' | 'jsx' | 'json' | 'other';
+    language?: 'typescript' | 'javascript' | 'tsx' | 'jsx' | 'json' | 'php' | 'other';
     parseError?: string; // If AST parsing failed
     lastParsed?: number; // When semantic analysis was done
 }
@@ -116,6 +116,7 @@ export type ProjectType =
     | 'python'
     | 'go'
     | 'rust'
+    | 'php'
     | 'unknown';
 
 export interface ProjectMetadata {

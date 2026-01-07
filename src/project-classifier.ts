@@ -6,6 +6,7 @@ import { ProjectType, ProjectMetadata } from './types.js';
  */
 export function classifyProject(files: string[], techStack: string): ProjectMetadata {
     const fileLower = files.map(f => f.toLowerCase());
+    const techStackLower = (techStack || '').toLowerCase();
 
     // Detect project type based on files and tech stack
     let projectType: ProjectType = 'unknown';
@@ -17,25 +18,40 @@ export function classifyProject(files: string[], techStack: string): ProjectMeta
         projectType = 'nextjs';
     }
     // React SPA detection
-    else if (techStack.toLowerCase().includes('react') &&
+    else if (techStackLower.includes('react') &&
              fileLower.some(f => f.includes('src/app') || f.includes('src/index'))) {
         projectType = 'react-spa';
     }
     // Vue detection
-    else if (techStack.toLowerCase().includes('vue') ||
+    else if (techStackLower.includes('vue') ||
              fileLower.some(f => f.endsWith('.vue'))) {
         projectType = 'vue';
     }
-    // CLI detection
+    // PHP detection (Laravel, Symfony, FlightPHP, WordPress, etc.)
+    // Must come early since PHP projects may have cli/, routes/, controllers/ folders
+    else if (techStackLower.includes('laravel') ||
+             techStackLower.includes('symfony') ||
+             techStackLower.includes('flightphp') ||
+             techStackLower.includes('slim') ||
+             techStackLower.includes('laminas') ||
+             techStackLower.includes('codeigniter') ||
+             techStackLower.includes('wordpress') ||
+             techStackLower.includes('drupal') ||
+             techStackLower.includes('redbean') ||
+             techStackLower.includes('phpunit') ||
+             fileLower.some(f => f.includes('composer.json'))) {
+        projectType = 'php';
+    }
+    // CLI detection (JS/TS)
     else if (fileLower.some(f => f.includes('bin/') || f.includes('cli.')) ||
-             techStack.toLowerCase().includes('commander') ||
-             techStack.toLowerCase().includes('yargs')) {
+             techStackLower.includes('commander') ||
+             techStackLower.includes('yargs')) {
         projectType = 'cli';
     }
-    // Backend API detection
+    // Backend API detection (JS/TS)
     else if (fileLower.some(f => f.includes('routes/') || f.includes('api/') || f.includes('controllers/')) ||
-             techStack.toLowerCase().includes('express') ||
-             techStack.toLowerCase().includes('fastify')) {
+             techStackLower.includes('express') ||
+             techStackLower.includes('fastify')) {
         projectType = 'backend-api';
     }
     // Python detection
@@ -113,6 +129,7 @@ export function getProjectTypeDescription(metadata: ProjectMetadata): string {
         'python': 'Python project',
         'go': 'Go project',
         'rust': 'Rust project',
+        'php': 'PHP project',
         'unknown': 'Unknown project type'
     };
 

@@ -593,25 +593,30 @@ async function scanProjectLegacyInternal(
         });
     }
 
+    // Classify project type
+    const projectMetadata = classifyProject(files, techStack);
+
     return {
         techStack,
         fileStructure: limitedFiles,
         scoredFiles: scoredFilesWithScores?.slice(0, getMaxFiles()), // Limit to max files
-        openFiles: []
+        openFiles: [],
+        metadata: projectMetadata
     };
 }
 
 /**
- * Detect tech stack from package.json
+ * Detect tech stack from package.json or composer.json
  */
 async function detectTechStack(cwd: string): Promise<string> {
+    // Try package.json first (JavaScript/TypeScript projects)
     try {
         const packageJsonPath = path.join(cwd, 'package.json');
         const packageJsonRaw = await fs.readFile(packageJsonPath, 'utf-8');
         const packageJson = JSON.parse(packageJsonRaw);
 
         const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-        const significantDeps = filterSignificantDeps(Object.keys(deps));
+        const significantDeps = filterSignificantDeps(Object.keys(deps), 'js');
 
         if (significantDeps.length > 0) {
             return significantDeps.join(', ');
@@ -620,14 +625,30 @@ async function detectTechStack(cwd: string): Promise<string> {
         // Package.json doesn't exist or can't be read
     }
 
+    // Try composer.json (PHP projects)
+    try {
+        const composerJsonPath = path.join(cwd, 'composer.json');
+        const composerJsonRaw = await fs.readFile(composerJsonPath, 'utf-8');
+        const composerJson = JSON.parse(composerJsonRaw);
+
+        const deps = { ...composerJson.require, ...composerJson['require-dev'] };
+        const significantDeps = filterSignificantDeps(Object.keys(deps), 'php');
+
+        if (significantDeps.length > 0) {
+            return significantDeps.join(', ');
+        }
+    } catch (error) {
+        // composer.json doesn't exist or can't be read
+    }
+
     return "Unknown";
 }
 
 /**
  * Filter out noise dependencies to get the "Core Stack"
  */
-function filterSignificantDeps(deps: string[]): string[] {
-    const CORE_TECHS = [
+function filterSignificantDeps(deps: string[], ecosystem: 'js' | 'php'): string[] {
+    const JS_CORE_TECHS = [
         'react', 'next', 'vue', 'nuxt', 'svelte', 'angular',
         'tailwindcss', 'typescript', 'node', 'express', 'nest',
         'supabase', 'firebase', 'prisma', 'graphql', 'apollo',
@@ -635,8 +656,21 @@ function filterSignificantDeps(deps: string[]): string[] {
         'tanstack', 'lucide', 'shadcn'
     ];
 
+    const PHP_CORE_TECHS = [
+        'laravel', 'symfony', 'flightphp', 'slim', 'laminas', 'codeigniter',
+        'redbean', 'gabordemooij/redbean', 'doctrine', 'eloquent', 'propel',
+        'twig', 'blade', 'smarty', 'latte',
+        'phpunit', 'pest', 'codeception',
+        'monolog', 'guzzle', 'carbon', 'nesbot/carbon',
+        'league', 'spatie', 'intervention',
+        'livewire', 'inertia', 'filament',
+        'wordpress', 'drupal', 'magento', 'prestashop'
+    ];
+
+    const coreTechs = ecosystem === 'php' ? PHP_CORE_TECHS : JS_CORE_TECHS;
+
     return deps.filter(d =>
-        CORE_TECHS.some(tech => d.includes(tech))
+        coreTechs.some(tech => d.toLowerCase().includes(tech.toLowerCase()))
     );
 }
 
