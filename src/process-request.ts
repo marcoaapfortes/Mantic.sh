@@ -92,11 +92,53 @@ export async function processRequest(userPrompt: string, options: any): Promise<
             };
         });
 
-        // If scoredFiles is missing, something went wrong in the scanner
+        // NEW - returns empty result with helpful warning
         if (!scoredFiles || scoredFiles.length === 0) {
-            throw new Error('Scanner failed to produce scored files. This is a bug.');
-        }
+            const keywordCount = intentAnalysis.keywords.length;
+            const warning = keywordCount > 3
+                ? `No files matched enough of your ${keywordCount} search terms. The "Soft AND" scoring requires files to contain most keywords. Try a shorter query (2-3 keywords) or broader terms.`
+                : 'No files matched your search terms. Try different keywords or check spelling.';
 
+            const emptyResult = {
+                query: userPrompt,
+                intent: {
+                    category: intentAnalysis.category,
+                    confidence: intentAnalysis.confidence,
+                    keywords: intentAnalysis.keywords
+                },
+                files: [],
+                metadata: {
+                    projectType: projectContext.metadata?.projectType || 'unknown',
+                    techStack: projectContext.techStack,
+                    totalScanned: projectContext.fileStructure.length,
+                    filesReturned: 0,
+                    timeMs: scanTimeMs,
+                    hasGitChanges: false
+                },
+                warnings: [{ type: 'file_not_found' as const, message: warning }]
+            };
+
+            // Output in requested format
+            let output = '';
+            switch (outputFormat) {
+                case 'json':
+                    output = JSON.stringify(emptyResult, null, 2);
+                    console.log(output);
+                    return output;
+                case 'files':
+                    console.log(`# Warning: ${warning}`);
+                    return '';
+                case 'markdown':
+                    output = `# No Results\n\n**Warning:** ${warning}\n`;
+                    console.log(output);
+                    return output;
+                case 'mcp':
+                    output = JSON.stringify({ ...emptyResult, _mcp: true }, null, 2);
+                    console.log(output);
+                    return output;
+            }
+            return '';
+        }
         // Apply context filters
         const filterType: FileType | null = options.code ? 'code'
             : options.config ? 'config'
