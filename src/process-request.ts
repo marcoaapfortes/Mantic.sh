@@ -113,7 +113,7 @@ export async function processRequest(userPrompt: string, options: any): Promise<
                     totalScanned: projectContext.fileStructure.length,
                     filesReturned: 0,
                     timeMs: scanTimeMs,
-                    hasGitChanges: false
+                    hasGitChanges: !!projectContext.gitState
                 },
                 warnings: [{ type: 'file_not_found' as const, message: warning }]
             };

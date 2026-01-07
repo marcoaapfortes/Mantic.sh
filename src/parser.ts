@@ -13,6 +13,11 @@ let tsModule: typeof ts;
 // Global variable for PHP parser (lazy loaded)
 let phpParser: any;
 
+/**
+ * Lazily loads the TypeScript compiler module.
+ * Tries to load from the user's project first, then falls back to dev dependency.
+ * @throws Error if TypeScript is not found in either location
+ */
 function loadTypeScript() {
     if (tsModule) return;
     try {
@@ -29,6 +34,11 @@ function loadTypeScript() {
     }
 }
 
+/**
+ * Lazily loads the PHP parser module (php-parser).
+ * Initializes the parser with PHP 7+ syntax support and error suppression.
+ * @throws Error if php-parser is not installed
+ */
 function loadPHPParser() {
     if (phpParser) return;
     try {
@@ -213,6 +223,11 @@ export class FileParser {
         return result;
     }
 
+    /**
+     * Extracts named exports from an export declaration node.
+     * @param node - The TypeScript export declaration AST node
+     * @param result - The parsed file data to populate
+     */
     private extractExportDeclaration(node: ts.ExportDeclaration, result: ParsedFileData) {
         if (node.exportClause && tsModule.isNamedExports(node.exportClause)) {
             node.exportClause.elements.forEach(element => {
@@ -224,6 +239,11 @@ export class FileParser {
         }
     }
 
+    /**
+     * Extracts default export from an export assignment node.
+     * @param node - The TypeScript export assignment AST node
+     * @param result - The parsed file data to populate
+     */
     private extractExportAssignment(node: ts.ExportAssignment, result: ParsedFileData) {
         result.exports.push({
             name: 'default',
@@ -231,6 +251,12 @@ export class FileParser {
         });
     }
 
+    /**
+     * Extracts import information from an import declaration node.
+     * Handles default imports, named imports, and namespace imports.
+     * @param node - The TypeScript import declaration AST node
+     * @param result - The parsed file data to populate
+     */
     private extractImportDeclaration(node: ts.ImportDeclaration, result: ParsedFileData) {
         const moduleSpecifier = node.moduleSpecifier;
         if (!tsModule.isStringLiteral(moduleSpecifier)) return;
@@ -265,6 +291,12 @@ export class FileParser {
         });
     }
 
+    /**
+     * Determines if an AST node represents a React/Vue component declaration.
+     * Checks for function components, arrow function components, and class components.
+     * @param node - The TypeScript AST node to check
+     * @returns True if the node represents a component declaration
+     */
     private isComponentDeclaration(node: ts.Node): boolean {
         // Function component
         if (tsModule.isFunctionDeclaration(node) && node.name) {
@@ -309,6 +341,12 @@ export class FileParser {
         return false;
     }
 
+    /**
+     * Extracts component information from a component declaration node.
+     * @param node - The TypeScript AST node representing a component
+     * @param sourceFile - The source file for line number calculation
+     * @param result - The parsed file data to populate
+     */
     private extractComponent(node: ts.Node, sourceFile: ts.SourceFile, result: ParsedFileData) {
         let name = '';
         let type: ComponentInfo['type'] = 'function';
@@ -339,6 +377,12 @@ export class FileParser {
         }
     }
 
+    /**
+     * Extracts semantic keywords from AST nodes for search indexing.
+     * Matches identifiers, string literals, and JSX elements against keyword patterns.
+     * @param node - The TypeScript AST node to extract keywords from
+     * @param keywordSet - The set to add extracted keywords to
+     */
     private extractKeywords(node: ts.Node, keywordSet: Set<string>) {
         // Check identifiers
         if (tsModule.isIdentifier(node)) {
@@ -438,7 +482,7 @@ export class FileParser {
                         }
                         break;
 
-                    case 'class':
+                    case 'class': {
                         const className = getName(node.name);
                         if (className) {
                             result.classes.push(className);
@@ -450,8 +494,9 @@ export class FileParser {
                             keywordSet.add(className.toLowerCase());
                         }
                         break;
+                    }
 
-                    case 'interface':
+                    case 'interface': {
                         const interfaceName = getName(node.name);
                         if (interfaceName) {
                             result.types.push(interfaceName);
@@ -463,16 +508,18 @@ export class FileParser {
                             keywordSet.add(interfaceName.toLowerCase());
                         }
                         break;
+                    }
 
-                    case 'trait':
+                    case 'trait': {
                         const traitName = getName(node.name);
                         if (traitName) {
                             result.types.push(traitName);
                             keywordSet.add(traitName.toLowerCase());
                         }
                         break;
+                    }
 
-                    case 'function':
+                    case 'function': {
                         const funcName = getName(node.name);
                         if (funcName) {
                             result.functions.push({
@@ -488,8 +535,9 @@ export class FileParser {
                             keywordSet.add(funcName.toLowerCase());
                         }
                         break;
+                    }
 
-                    case 'method':
+                    case 'method': {
                         const methodName = getName(node.name);
                         if (methodName) {
                             // Skip magic methods for keyword extraction
@@ -503,8 +551,9 @@ export class FileParser {
                             }
                         }
                         break;
+                    }
 
-                    case 'usegroup':
+                    case 'usegroup': {
                         // Handle grouped use statements: use Foo\{Bar, Baz}
                         if (node.items && Array.isArray(node.items)) {
                             for (const item of node.items) {
@@ -521,6 +570,7 @@ export class FileParser {
                             }
                         }
                         break;
+                    }
 
                     case 'useitem':
                         // Handle single use statement (skip if parent is usegroup)

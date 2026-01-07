@@ -6,3 +6,4 @@ dist
 .mantic/
 .claude/
 .npmrc
+package-lock.json

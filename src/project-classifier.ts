@@ -1,8 +1,12 @@
 import { ProjectType, ProjectMetadata } from './types.js';
 
 /**
- * Classify project type based on file structure and tech stack
- * Uses pattern matching for fast, deterministic classification
+ * Classifies a project's type based on file structure and tech stack.
+ * Uses pattern matching for fast, deterministic classification.
+ * Supports: Next.js, React SPA, Vue, CLI, PHP, Backend API, Python, Go, Rust, Library.
+ * @param files - Array of file paths in the project
+ * @param techStack - Detected tech stack string from dependency manifests
+ * @returns ProjectMetadata including type, UI/backend capabilities, and testing presence
  */
 export function classifyProject(files: string[], techStack: string): ProjectMetadata {
     const fileLower = files.map(f => f.toLowerCase());
@@ -116,6 +120,12 @@ export function classifyProject(files: string[], techStack: string): ProjectMeta
     };
 }
 
+/**
+ * Generates a human-readable description of the project type.
+ * Includes additional capability tags (UI, API, CLI) when applicable.
+ * @param metadata - The project metadata from classification
+ * @returns A descriptive string like "PHP project (UI, API)"
+ */
 export function getProjectTypeDescription(metadata: ProjectMetadata): string {
     const { projectType, isCLI, hasUI, hasBackend } = metadata;
 

@@ -606,7 +606,10 @@ async function scanProjectLegacyInternal(
 }
 
 /**
- * Detect tech stack from package.json or composer.json
+ * Detects the project's tech stack from dependency manifests.
+ * Checks package.json for JS/TS projects and composer.json for PHP projects.
+ * @param cwd - The working directory to search for manifest files
+ * @returns A comma-separated string of significant dependencies, or "Unknown"
  */
 async function detectTechStack(cwd: string): Promise<string> {
     // Try package.json first (JavaScript/TypeScript projects)
@@ -645,7 +648,11 @@ async function detectTechStack(cwd: string): Promise<string> {
 }
 
 /**
- * Filter out noise dependencies to get the "Core Stack"
+ * Filters dependencies to extract only significant/core technologies.
+ * Removes utility packages and keeps frameworks, ORMs, and major libraries.
+ * @param deps - Array of dependency names to filter
+ * @param ecosystem - The package ecosystem ('js' for npm, 'php' for composer)
+ * @returns Array of significant dependency names
  */
 function filterSignificantDeps(deps: string[], ecosystem: 'js' | 'php'): string[] {
     const JS_CORE_TECHS = [
